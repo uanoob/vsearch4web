@@ -1,8 +1,11 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, session
 from vsearch import search4letters
 from dbcontextmanager import UseDatabase
+from checker import check_logged_in
 
 app = Flask(__name__)
+
+app.secret_key = 'YouWillNeverGuess'
 
 app.config['dbconfig'] = {
     'host': '127.0.0.1',
@@ -51,6 +54,7 @@ def do_search() -> 'html':
 
 
 @ app.route('/viewlog')
+@check_logged_in
 def view_log() -> 'html':
     title = 'View Log'
     row_titles = ('Phrase', 'Letters',
@@ -60,6 +64,27 @@ def view_log() -> 'html':
                            the_title=title,
                            the_row_titles=row_titles,
                            the_data=content)
+
+
+@app.route('/login')
+def do_login() -> str:
+    session['logged_in'] = True
+    title = 'Login page'
+    message = 'You are now logged in'
+    return render_template('auth.html',
+                           the_title=title,
+                           the_message=message)
+
+
+@app.route('/logout')
+@check_logged_in
+def do_logout() -> str:
+    session.pop('logged_in')
+    title = 'Logout page'
+    message = 'You are loggout'
+    return render_template('auth.html',
+                           the_title=title,
+                           the_message=message)
 
 
 @app.route('/')
