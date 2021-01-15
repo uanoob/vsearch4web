@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, session
 from vsearch import search4letters
-from dbcontextmanager import UseDatabase
-from checker import check_logged_in
+from dbcontextmanager import UseDatabase, ConnectionError, CredentialsError, SQLError
+from checker_decorator import check_logged_in
 
 app = Flask(__name__)
 
@@ -16,27 +16,47 @@ app.config['dbconfig'] = {
 
 
 def log_write(request: 'flask_request', result: str) -> None:
-    with UseDatabase(app.config['dbconfig']) as cursor:
-        add_row = (
-            "INSERT INTO log (phrase, letters, ip, browser_string, results) VALUES (%s, %s, %s, %s, %s)")
-        cursor.execute(
-            add_row,
-            (request.form['phrase'],
-             request.form['letters'],
-             request.remote_addr,
-             request.user_agent.browser,
-             result)
-        )
-        print('db_write')
+    try:
+        with UseDatabase(app.config['dbconfig']) as cursor:
+            add_row = (
+                "INSERT INTO log (phrase, letters, ip, browser_string, results) VALUES (%s, %s, %s, %s, %s)")
+            cursor.execute(
+                add_row,
+                (request.form['phrase'],
+                 request.form['letters'],
+                 request.remote_addr,
+                 request.user_agent.browser,
+                 result)
+            )
+            print('db_write')
+    except ConnectionError as err:
+        print('Is your database switched on? Error: ', str(err))
+    except CredentialsError as err:
+        print('User-id/Password issues. Error: ', str(err))
+    except SQLError as err:
+        print('Is your query correct? Error:', str(err))
+    except Exception as err:
+        print('Logging failed with this error: ', str(err))
+    return 'Error'
 
 
 def log_read() -> list:
-    with UseDatabase(app.config['dbconfig']) as cursor:
-        fetch_all = (
-            "SELECT phrase, letters, results, browser_string, ip, ts FROM log")
-        cursor.execute(fetch_all)
-        print('db_read')
-        return cursor.fetchall()
+    try:
+        with UseDatabase(app.config['dbconfig']) as cursor:
+            fetch_all = (
+                "SELECT phrase, letters, results, browser_string, ip, ts FROM log")
+            cursor.execute(fetch_all)
+            print('db_read')
+            return cursor.fetchall()
+    except ConnectionError as err:
+        print('Is your database switched on? Error: ', str(err))
+    except CredentialsError as err:
+        print('User-id/Password issues. Error: ', str(err))
+    except SQLError as err:
+        print('Is your query correct? Error:', str(err))
+    except Exception as err:
+        print('Something went wrong: ', str(err))
+    return 'Error'
 
 
 @ app.route('/search', methods=['POST'])
