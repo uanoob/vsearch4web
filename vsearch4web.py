@@ -1,7 +1,8 @@
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, session, copy_current_request_context
 from vsearch import search4letters
 from dbcontextmanager import UseDatabase, ConnectionError, CredentialsError, SQLError
 from checker_decorator import check_logged_in
+from threading import Thread
 
 app = Flask(__name__)
 
@@ -13,31 +14,6 @@ app.config['dbconfig'] = {
     'password': 'vsearchpass',
     'database': 'vsearchlogDB',
 }
-
-
-def log_write(request: 'flask_request', result: str) -> None:
-    try:
-        with UseDatabase(app.config['dbconfig']) as cursor:
-            add_row = (
-                "INSERT INTO log (phrase, letters, ip, browser_string, results) VALUES (%s, %s, %s, %s, %s)")
-            cursor.execute(
-                add_row,
-                (request.form['phrase'],
-                 request.form['letters'],
-                 request.remote_addr,
-                 request.user_agent.browser,
-                 result)
-            )
-            print('db_write')
-    except ConnectionError as err:
-        print('Is your database switched on? Error: ', str(err))
-    except CredentialsError as err:
-        print('User-id/Password issues. Error: ', str(err))
-    except SQLError as err:
-        print('Is your query correct? Error:', str(err))
-    except Exception as err:
-        print('Logging failed with this error: ', str(err))
-    return 'Error'
 
 
 def log_read() -> list:
@@ -61,11 +37,39 @@ def log_read() -> list:
 
 @ app.route('/search', methods=['POST'])
 def do_search() -> 'html':
+    @copy_current_request_context
+    def log_write(request: 'flask_request', result: str) -> None:
+        try:
+            with UseDatabase(app.config['dbconfig']) as cursor:
+                add_row = (
+                    "INSERT INTO log (phrase, letters, ip, browser_string, results) VALUES (%s, %s, %s, %s, %s)")
+                cursor.execute(
+                    add_row,
+                    (request.form['phrase'],
+                     request.form['letters'],
+                     request.remote_addr,
+                     request.user_agent.browser,
+                     result)
+                )
+                print('db_write')
+        except ConnectionError as err:
+            print('Is your database switched on? Error: ', str(err))
+        except CredentialsError as err:
+            print('User-id/Password issues. Error: ', str(err))
+        except SQLError as err:
+            print('Is your query correct? Error:', str(err))
+        except Exception as err:
+            print('Logging failed with this error: ', str(err))
+        return 'Error'
+
     title = 'Here are you results'
     phrase = request.form['phrase']
     letters = request.form['letters']
     results = str(search4letters(phrase, letters))
-    log_write(request, results)
+
+    concurrency_log_write = Thread(target=log_write, args=(request, results))
+    concurrency_log_write.start()
+
     return render_template('results.html',
                            the_title=title,
                            the_phrase=phrase,
